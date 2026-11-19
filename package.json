@@ -1,0 +1,31 @@
+{
+  "name": "@titan/titan-ledger-hub",
+  "version": "1.0.0",
+  "description": "TitanLedger & Clearing Hub — Core Banking, Double-Entry Bookkeeping & Liquidação Instantânea Pix",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/tests/titan-domain.test.js",
+    "test:all": "npm run build && npm test",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "core-banking",
+    "double-entry",
+    "ledger",
+    "pix",
+    "clearing-hub",
+    "bacen",
+    "febraban",
+    "clean-architecture",
+    "ddd",
+    "typescript"
+  ],
+  "author": "Guilherme Santiago Floriano",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
