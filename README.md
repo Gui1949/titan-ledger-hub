@@ -1,7 +1,7 @@
 # 🏛️ TitanLedger & Clearing Hub
 > **Módulo:** `titan-ledger-hub`  
 > **Segmento:** Core Banking, Instituições de Pagamento (IP), Liquidação Instantânea Pix (SPI/Bacen) & Double-Entry Bookkeeping  
-> **Arquitetura:** Domain-Driven Design (DDD), Clean Architecture, Append-Only Immutable Ledger, Integer Cents Math & Finite State Machines  
+> **Arquitetura:** Domain-Driven Design (DDD), Clean Architecture, Append-Only Immutable Ledger, Unit of Work ACID, Mutex Locks & Finite State Machines  
 > **Autor:** Guilherme Santiago Floriano (Tech Lead / Senior Software Engineer)
 
 ---
@@ -83,10 +83,22 @@ sequenceDiagram
 | **RN-03** | **Validação Estrita de Chaves Pix Bacen** | Chaves Pix validadas pelos 4 padrões oficiais do Bacen (CPF/CNPJ mod-11, E-mail RFC, Telefone E.164, EVP UUIDv4). |
 | **RN-04** | **Zero Descoberto sem Limite Aprovado** | Nenhuma conta corrente de cliente pode ficar com saldo negativo se o limite for zero. Violação lança `SaldoInsuficienteError`. |
 | **RN-05** | **Integridade da FSM da Transação** | Transições de estado controladas (`CRIADA` ➔ `PROCESSANDO` ➔ `LIQUIDADA` ➔ `ESTORNADA`). Transições arbitrárias disparam exceções tipadas. |
+| **RN-06** | **Atomicidade ACID & Rollback Transacional** | Falhas durante liquidação revertem integralmente lançamentos via `UnitOfWork` sem poluir o ledger (*All-or-Nothing*). |
+| **RN-07** | **Idempotência Estrita de Mensageria/SPI** | Replays com mesma `idempotencyKey` retornam a transação idêntica instantaneamente sem duplicar lançamentos. |
+| **RN-08** | **Serialização Concorrente & Prevenção de Deadlock** | Concorrência gerida por mutex locks ordenados lexicograficamente, blindando contra double-spending e deadlocks. |
 
 ---
 
-## 5. Como Executar os Testes Automatizados
+## 5. Arquitetura de Persistência ACID & Concorrência (Fase 2)
+
+- **`IUnitOfWork` / `InMemoryUnitOfWork`**: Gerencia contextos transacionais isolados com snapshot de repositórios. Qualquer falha no pipeline contábil desfaz adições ao ledger de forma estrita.
+- **`AsyncMutexLockManager`**: Implementa semáforos exclusivos por recurso (`[contaOrigemId, contaDestinoId]`) ordenados alfabeticamente para eliminar deadlocks em transferências cruzadas simultâneas.
+- **`ProcessarTransferenciaPixUseCase`**: Orquestra idempotência, locks, validação de saldo no ledger, cálculo de partidas dobradas e liquidação atômica.
+- **`EstornarTransferenciaPixUseCase`**: Executa contrapartidas contábeis reversas completas mantendo o histórico de auditoria imutável (Append-Only).
+
+---
+
+## 6. Como Executar os Testes Automatizados
 
 O projeto utiliza o executor nativo do Node.js (`node:test` e `node:assert/strict`), sem dependências externas de teste:
 
@@ -97,14 +109,23 @@ npm install
 # Compilar TypeScript
 npm run build
 
-# Executar bateria de testes automatizados de domínio
+# Executar bateria de testes automatizados de domínio e persistência ACID
 npm test
 ```
 
-### Resultados da Suíte de Testes (18/18 Pass - 100%):
-- `AC-F1-01: Validação Estrita dos 4 Tipos de ChavePix (RN-03)`: 5 testes aprovados
-- `AC-F1-02: Motor de Partidas Dobradas com Soma Zero (RN-01)`: 3 testes aprovados
-- `AC-F1-03: Imutabilidade Contábil e Cálculo de Saldo (RN-02)`: 2 testes aprovados
-- `AC-F1-04: Proteção contra Saldo Negativo e FSM da Conta (RN-04)`: 4 testes aprovados
-- `AC-F1-05: Ciclo Completo de Transferência Pix com Liquidação e Estorno (RN-05)`: 2 testes aprovados
-- `Value Objects Auxiliares: ValorMonetario e AgenciaConta`: 2 testes aprovados
+### Resultados da Suíte de Testes (25/25 Pass - 100%):
+- `🏛️ Suíte de Aplicação & Persistência ACID (Fase 2)`: **7 testes aprovados**
+  - Execução atômica e liquidação com partidas dobradas
+  - Idempotência estrita e replay idempotente
+  - Rollback atômico contra saldo insuficiente
+  - Concorrência severa (prevenção de double-spending)
+  - Prevenção de deadlocks em transferências cruzadas simultâneas
+  - Rejeição de chave Pix inexistente
+  - Estorno contábil atômico e restauração de saldos
+- `🏛️ Suíte de Domínio (Fase 1)`: **18 testes aprovados**
+  - `AC-F1-01: Validação Estrita dos 4 Tipos de ChavePix (RN-03)`: 5 testes aprovados
+  - `AC-F1-02: Motor de Partidas Dobradas com Soma Zero (RN-01)`: 3 testes aprovados
+  - `AC-F1-03: Imutabilidade Contábil e Cálculo de Saldo (RN-02)`: 2 testes aprovados
+  - `AC-F1-04: Proteção contra Saldo Negativo e FSM da Conta (RN-04)`: 4 testes aprovados
+  - `AC-F1-05: Ciclo Completo de Transferência Pix com Liquidação e Estorno (RN-05)`: 2 testes aprovados
+  - `Value Objects Auxiliares: ValorMonetario e AgenciaConta`: 2 testes aprovados
