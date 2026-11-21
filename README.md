@@ -1,7 +1,7 @@
 # 🏛️ TitanLedger & Clearing Hub
 > **Módulo:** `titan-ledger-hub`  
-> **Segmento:** Core Banking, Instituições de Pagamento (IP), Liquidação Instantânea Pix (SPI/Bacen) & Double-Entry Bookkeeping  
-> **Arquitetura:** Domain-Driven Design (DDD), Clean Architecture, Append-Only Immutable Ledger, Unit of Work ACID, Mutex Locks & Finite State Machines  
+> **Segmento:** Core Banking, Instituições de Pagamento (IP), Liquidação Instantânea Pix (SPI/Bacen), Transactional Outbox & Double-Entry Bookkeeping  
+> **Arquitetura:** Domain-Driven Design (DDD), Clean Architecture, Append-Only Immutable Ledger, Unit of Work ACID, ISO 20022 & Dead Letter Queue  
 > **Autor:** Guilherme Santiago Floriano (Tech Lead / Senior Software Engineer)
 
 ---
@@ -86,6 +86,8 @@ sequenceDiagram
 | **RN-06** | **Atomicidade ACID & Rollback Transacional** | Falhas durante liquidação revertem integralmente lançamentos via `UnitOfWork` sem poluir o ledger (*All-or-Nothing*). |
 | **RN-07** | **Idempotência Estrita de Mensageria/SPI** | Replays com mesma `idempotencyKey` retornam a transação idêntica instantaneamente sem duplicar lançamentos. |
 | **RN-08** | **Serialização Concorrente & Prevenção de Deadlock** | Concorrência gerida por mutex locks ordenados lexicograficamente, blindando contra double-spending e deadlocks. |
+| **RN-09** | **Transactional Outbox & Dual-Write Prevention** | Mensagens SPI são gravadas atomicamente no Outbox dentro da mesma transação do ledger. Falha contábil cancela o envio sem vazamento de eventos. |
+| **RN-10** | **Criptografia HMAC-SHA256 & DLQ Resilience** | Webhooks assinados com HMAC-SHA256 e validação por tempo constante (`timingSafeEqual`). Falhas consecutivas ativam backoff exponencial e DLQ. |
 
 ---
 
@@ -98,7 +100,16 @@ sequenceDiagram
 
 ---
 
-## 6. Como Executar os Testes Automatizados
+## 6. Arquitetura de Mensageria, Clearing Pix SPI & Resiliência (Fase 3)
+
+- **`OutboxMessage` & `IOutboxRepository`**: Implementação canônica do padrão *Transactional Outbox*, garantindo que nenhuma mensagem seja disparada se a transação do livro-razão sofrer rollback.
+- **Padrão ISO 20022**: Mensagens canônicas `pacs.008` (Credit Transfer) e `pacs.004` (Payment Return) formatadas segundo as especificações técnicas do Sistema de Pagamentos Instantâneos (SPI / Bacen).
+- **`WebhookSignatureValidator`**: Proteção com assinatura HMAC-SHA256 transmitida no cabeçalho `X-Signature` e validada via `crypto.timingSafeEqual` para imunidade contra timing attacks.
+- **`OutboxRelayService`**: Motor de entrega com política de retentativas (exponential backoff) e isolamento em *Dead Letter Queue* (DLQ) para mensagens não recuperáveis.
+
+---
+
+## 7. Como Executar os Testes Automatizados
 
 O projeto utiliza o executor nativo do Node.js (`node:test` e `node:assert/strict`), sem dependências externas de teste:
 
@@ -109,11 +120,19 @@ npm install
 # Compilar TypeScript
 npm run build
 
-# Executar bateria de testes automatizados de domínio e persistência ACID
+# Executar bateria de testes automatizados completa (32 testes nativos)
 npm test
 ```
 
-### Resultados da Suíte de Testes (25/25 Pass - 100%):
+### Resultados da Suíte de Testes (32/32 Pass - 100%):
+- `🏛️ Suíte de Mensageria, Outbox & Resiliência (Fase 3)`: **7 testes aprovados**
+  - Gravação atômica ISO 20022 pacs.008 no Outbox via Transactional Outbox
+  - Prevenção de dual-write (rollback total do Outbox em erro contábil)
+  - Gravação ISO 20022 pacs.004 no Outbox em estornos contábeis
+  - Despacho com sucesso via OutboxRelayService e status ENVIADO
+  - Assinatura criptográfica HMAC-SHA256 e validação com `timingSafeEqual`
+  - Retentativas com backoff exponencial sob instabilidade temporária
+  - Encaminhamento automático para Dead Letter Queue (DLQ)
 - `🏛️ Suíte de Aplicação & Persistência ACID (Fase 2)`: **7 testes aprovados**
   - Execução atômica e liquidação com partidas dobradas
   - Idempotência estrita e replay idempotente

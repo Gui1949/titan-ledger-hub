@@ -17,6 +17,8 @@ import { TransacaoDeTransferencia } from '../../../domain/entities/TransacaoDeTr
 import { LancamentoContabil } from '../../../domain/entities/LancamentoContabil.js';
 import { MotorContabilDoubleEntry } from '../../../domain/services/MotorContabilDoubleEntry.js';
 import { LedgerBalanceService } from '../../../domain/services/LedgerBalanceService.js';
+import { PixEstornoRealizadoEvent } from '../../../domain/events/PixEstornoRealizadoEvent.js';
+import { OutboxMessage } from '../../../domain/entities/OutboxMessage.js';
 
 export class EstornarTransferenciaPixUseCase {
   private readonly motorContabil = new MotorContabilDoubleEntry();
@@ -94,6 +96,27 @@ export class EstornarTransferenciaPixUseCase {
           await ctx.transacoes.atualizar(transacaoOriginal);
           await ctx.transacoes.salvar(transacaoEstorno);
           await ctx.lancamentos.adicionarEmLote([lancamentoEstornoDebito, lancamentoEstornoCredito]);
+
+          // Mensageria SPI ISO 20022 (pacs.004) via Transactional Outbox
+          const eventoEstorno = new PixEstornoRealizadoEvent({
+            msgId: `MSG-PACS004-${transacaoEstorno.id}`,
+            transacaoEstornoId: transacaoEstorno.id,
+            transacaoOriginalId: transacaoOriginal.id,
+            endToEndIdOriginal: transacaoOriginal.endToEndId,
+            valorEstornadoCentavos: debitoOriginal.valor.centavos,
+            valorFormatadoBrl: debitoOriginal.valor.formatarBrl(),
+            motivoEstorno: input.motivoEstorno,
+            estornadoEm: transacaoEstorno.updatedAt.toISOString(),
+            isoStandard: 'pacs.004.001.09',
+          });
+
+          const outboxMsg = new OutboxMessage({
+            aggregateType: 'TransacaoDeTransferencia',
+            aggregateId: transacaoEstorno.id,
+            eventType: eventoEstorno.eventType,
+            payload: JSON.stringify(eventoEstorno.payload),
+          });
+          await ctx.outbox.salvar(outboxMsg);
 
           const lancamentosOrigemDepois = await ctx.lancamentos.buscarPorContaId(contaOrigem.id);
           const lancamentosDestinoDepois = await ctx.lancamentos.buscarPorContaId(contaDestino.id);

@@ -3,18 +3,22 @@ import { IUnitOfWork, ITransactionContext } from '../../../application/ports/uni
 import { IContaContabilRepository } from '../../../application/ports/repositories/IContaContabilRepository.js';
 import { ILancamentoContabilRepository } from '../../../application/ports/repositories/ILancamentoContabilRepository.js';
 import { ITransacaoRepository } from '../../../application/ports/repositories/ITransacaoRepository.js';
+import { IOutboxRepository } from '../../../application/ports/repositories/IOutboxRepository.js';
 import { InMemoryContaContabilRepository } from './InMemoryContaContabilRepository.js';
 import { InMemoryLancamentoContabilRepository } from './InMemoryLancamentoContabilRepository.js';
 import { InMemoryTransacaoRepository } from './InMemoryTransacaoRepository.js';
+import { InMemoryOutboxRepository } from './InMemoryOutboxRepository.js';
 import { ContaContabil } from '../../../domain/entities/ContaContabil.js';
 import { LancamentoContabil } from '../../../domain/entities/LancamentoContabil.js';
 import { TransacaoDeTransferencia } from '../../../domain/entities/TransacaoDeTransferencia.js';
+import { OutboxMessage } from '../../../domain/entities/OutboxMessage.js';
 
 export class InMemoryUnitOfWork implements IUnitOfWork {
   constructor(
     private readonly contaRepo: InMemoryContaContabilRepository,
     private readonly lancamentoRepo: InMemoryLancamentoContabilRepository,
-    private readonly transacaoRepo: InMemoryTransacaoRepository
+    private readonly transacaoRepo: InMemoryTransacaoRepository,
+    private readonly outboxRepo: InMemoryOutboxRepository = new InMemoryOutboxRepository()
   ) {}
 
   public async runInTransaction<T>(
@@ -29,6 +33,9 @@ export class InMemoryUnitOfWork implements IUnitOfWork {
     const transacoesOriginais = new Map<string, TransacaoDeTransferencia>();
     const transacoesSalvasNestaTx = new Set<string>();
     const idempotenciasSalvasNestaTx = new Set<string>();
+
+    const outboxOriginais = new Map<string, OutboxMessage>();
+    const outboxSalvasNestaTx = new Set<string>();
 
     const txContas: IContaContabilRepository = {
       salvar: async (c) => {
@@ -97,11 +104,40 @@ export class InMemoryUnitOfWork implements IUnitOfWork {
       listarTodas: () => this.transacaoRepo.listarTodas(),
     };
 
+    const txOutbox: IOutboxRepository = {
+      salvar: async (msg) => {
+        if (!this.outboxRepo.items.has(msg.id)) {
+          outboxSalvasNestaTx.add(msg.id);
+        } else if (!outboxOriginais.has(msg.id)) {
+          outboxOriginais.set(msg.id, this.outboxRepo.items.get(msg.id)!);
+        }
+        await this.outboxRepo.salvar(msg);
+      },
+      salvarEmLote: async (msgs) => {
+        for (const m of msgs) {
+          await txOutbox.salvar(m);
+        }
+      },
+      atualizar: async (msg) => {
+        if (!outboxOriginais.has(msg.id)) {
+          const antes = await this.outboxRepo.buscarPorId(msg.id);
+          if (antes) outboxOriginais.set(msg.id, antes);
+        }
+        await this.outboxRepo.atualizar(msg);
+      },
+      buscarPorId: (id) => this.outboxRepo.buscarPorId(id),
+      buscarPorStatus: (st) => this.outboxRepo.buscarPorStatus(st),
+      buscarPendentesParaEnvio: (lim, dt) => this.outboxRepo.buscarPendentesParaEnvio(lim, dt),
+      contarPorStatus: (st) => this.outboxRepo.contarPorStatus(st),
+      contarTotal: () => this.outboxRepo.contarTotal(),
+    };
+
     try {
       const result = await work({
         contas: txContas,
         lancamentos: txLancamentos,
         transacoes: txTransacoes,
+        outbox: txOutbox,
       });
       return result;
     } catch (error) {
@@ -131,6 +167,14 @@ export class InMemoryUnitOfWork implements IUnitOfWork {
       }
       for (const key of idempotenciasSalvasNestaTx) {
         this.transacaoRepo.idempotenciaMap.delete(key);
+      }
+
+      // 4. Restaura outbox
+      for (const [id, original] of outboxOriginais.entries()) {
+        this.outboxRepo.items.set(id, original);
+      }
+      for (const id of outboxSalvasNestaTx) {
+        this.outboxRepo.items.delete(id);
       }
 
       throw error;

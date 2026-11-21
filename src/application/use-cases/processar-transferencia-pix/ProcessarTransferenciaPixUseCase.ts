@@ -17,6 +17,8 @@ import { TransacaoDeTransferencia } from '../../../domain/entities/TransacaoDeTr
 import { LancamentoContabil } from '../../../domain/entities/LancamentoContabil.js';
 import { MotorContabilDoubleEntry } from '../../../domain/services/MotorContabilDoubleEntry.js';
 import { LedgerBalanceService } from '../../../domain/services/LedgerBalanceService.js';
+import { PixTransferenciaLiquidadaEvent } from '../../../domain/events/PixTransferenciaLiquidadaEvent.js';
+import { OutboxMessage } from '../../../domain/entities/OutboxMessage.js';
 
 export class ProcessarTransferenciaPixUseCase {
   private readonly motorContabil = new MotorContabilDoubleEntry();
@@ -142,6 +144,30 @@ export class ProcessarTransferenciaPixUseCase {
           // Persistência atômica via TransactionContext
           await ctx.transacoes.salvarComIdempotencia(input.idempotencyKey, transacao);
           await ctx.lancamentos.adicionarEmLote([lancamentoDebito, lancamentoCredito]);
+
+          // Mensageria SPI ISO 20022 (pacs.008) via Transactional Outbox
+          const evento = new PixTransferenciaLiquidadaEvent({
+            msgId: `MSG-PACS008-${transacao.id}`,
+            endToEndId: transacao.endToEndId,
+            transacaoId: transacao.id,
+            valorCentavos: valorMonetario.centavos,
+            valorFormatadoBrl: valorMonetario.formatarBrl(),
+            debitoContaId: cOrigem.id,
+            debitoTitular: cOrigem.titular,
+            creditoContaId: cDestino.id,
+            creditoTitular: cDestino.titular,
+            chavePixDestino: input.chavePixDestino,
+            liquidadoEm: transacao.updatedAt.toISOString(),
+            isoStandard: 'pacs.008.001.08',
+          });
+
+          const outboxMsg = new OutboxMessage({
+            aggregateType: 'TransacaoDeTransferencia',
+            aggregateId: transacao.id,
+            eventType: evento.eventType,
+            payload: JSON.stringify(evento.payload),
+          });
+          await ctx.outbox.salvar(outboxMsg);
 
           // Recálculo dos saldos pós-liquidação a partir do ledger
           const lancamentosOrigemDepois = await ctx.lancamentos.buscarPorContaId(cOrigem.id);
