@@ -88,6 +88,8 @@ sequenceDiagram
 | **RN-08** | **Serialização Concorrente & Prevenção de Deadlock** | Concorrência gerida por mutex locks ordenados lexicograficamente, blindando contra double-spending e deadlocks. |
 | **RN-09** | **Transactional Outbox & Dual-Write Prevention** | Mensagens SPI são gravadas atomicamente no Outbox dentro da mesma transação do ledger. Falha contábil cancela o envio sem vazamento de eventos. |
 | **RN-10** | **Criptografia HMAC-SHA256 & DLQ Resilience** | Webhooks assinados com HMAC-SHA256 e validação por tempo constante (`timingSafeEqual`). Falhas consecutivas ativam backoff exponencial e DLQ. |
+| **RN-11** | **Auditoria Global de Partidas Dobradas (Soma Zero)** | Varredura contábil periódica do Livro-Razão. A soma global de débitos deve ser idêntica à de créditos com resíduo zero absoluto (0c). |
+| **RN-12** | **Monitoramento Industrial de Mensageria & DLQ** | Detecção de gargalos de mensagens pendentes e sinalização imediata de `DEGRADED` na presença de qualquer mensagem na Dead Letter Queue. |
 
 ---
 
@@ -109,7 +111,15 @@ sequenceDiagram
 
 ---
 
-## 7. Como Executar os Testes Automatizados
+## 7. Arquitetura de Telemetria, Probes & Cockpit de Core Banking (Fase 4)
+
+- **`TelemetryCollector`**: Coleta granular de métricas contábeis, volume transacionado, replays idempotentes e cálculo de histogramas de latência (`p50`, `p95`, `p99`).
+- **`HealthCheckService`**: Probes de Liveness (`/health/live`) e Readiness (`/health/ready`), auditoria contábil de soma zero em tempo de execução (`RN-11`) e alarmes de saturação de outbox / DLQ (`RN-12`).
+- **`CoreBankingCockpitEngine`**: Agregador executivo que consolida saldo custodiado de clientes (Passivo), patrimônio, resíduo contábil global, throughput e conformidade com o SLA Bacen SPI (< 1000ms).
+
+---
+
+## 8. Como Executar os Testes Automatizados
 
 O projeto utiliza o executor nativo do Node.js (`node:test` e `node:assert/strict`), sem dependências externas de teste:
 
@@ -120,11 +130,19 @@ npm install
 # Compilar TypeScript
 npm run build
 
-# Executar bateria de testes automatizados completa (32 testes nativos)
+# Executar bateria de testes automatizados completa (39 testes nativos)
 npm test
 ```
 
-### Resultados da Suíte de Testes (32/32 Pass - 100%):
+### Resultados da Suíte de Testes (39/39 Pass - 100%):
+- `🏛️ Suíte de Telemetria, Probes & Cockpit (Fase 4)`: **7 testes aprovados**
+  - Coleta de telemetria e histogramas p50/p95/p99 de latência
+  - Liveness e readiness probes operacionais
+  - Auditoria contábil RN-11 com resíduo zero absoluto (0c)
+  - Detecção e alerta DOWN sob divergência contábil simulada
+  - Alerta DEGRADED para mensagens na Dead Letter Queue (DLQ)
+  - Alerta DEGRADED sob saturação de backlog de outbox
+  - Consolidação executiva no Core Banking Cockpit com SLA SPI
 - `🏛️ Suíte de Mensageria, Outbox & Resiliência (Fase 3)`: **7 testes aprovados**
   - Gravação atômica ISO 20022 pacs.008 no Outbox via Transactional Outbox
   - Prevenção de dual-write (rollback total do Outbox em erro contábil)
@@ -138,6 +156,16 @@ npm test
   - Idempotência estrita e replay idempotente
   - Rollback atômico contra saldo insuficiente
   - Concorrência severa (prevenção de double-spending)
+  - Prevenção de deadlocks em transferências cruzadas simultâneas
+  - Rejeição de chave Pix inexistente
+  - Estorno contábil atômico e restauração de saldos
+- `🏛️ Suíte de Domínio (Fase 1)`: **18 testes aprovados**
+  - `AC-F1-01: Validação Estrita dos 4 Tipos de ChavePix (RN-03)`: 5 testes aprovados
+  - `AC-F1-02: Motor de Partidas Dobradas com Soma Zero (RN-01)`: 3 testes aprovados
+  - `AC-F1-03: Imutabilidade Contábil e Cálculo de Saldo (RN-02)`: 2 testes aprovados
+  - `AC-F1-04: Proteção contra Saldo Negativo e FSM da Conta (RN-04)`: 4 testes aprovados
+  - `AC-F1-05: Ciclo Completo de Transferência Pix com Liquidação e Estorno (RN-05)`: 2 testes aprovados
+  - `Value Objects Auxiliares: ValorMonetario e AgenciaConta`: 2 testes aprovados
   - Prevenção de deadlocks em transferências cruzadas simultâneas
   - Rejeição de chave Pix inexistente
   - Estorno contábil atômico e restauração de saldos

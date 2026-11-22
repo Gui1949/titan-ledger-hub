@@ -19,6 +19,7 @@ import { MotorContabilDoubleEntry } from '../../../domain/services/MotorContabil
 import { LedgerBalanceService } from '../../../domain/services/LedgerBalanceService.js';
 import { PixEstornoRealizadoEvent } from '../../../domain/events/PixEstornoRealizadoEvent.js';
 import { OutboxMessage } from '../../../domain/entities/OutboxMessage.js';
+import { ITelemetryCollector } from '../../ports/telemetry/ITelemetryCollector.js';
 
 export class EstornarTransferenciaPixUseCase {
   private readonly motorContabil = new MotorContabilDoubleEntry();
@@ -29,12 +30,14 @@ export class EstornarTransferenciaPixUseCase {
     private readonly lockManager: ILockManager,
     private readonly contaRepo: IContaContabilRepository,
     private readonly transacaoRepo: ITransacaoRepository,
-    private readonly lancamentoRepo: ILancamentoContabilRepository
+    private readonly lancamentoRepo: ILancamentoContabilRepository,
+    private readonly telemetry?: ITelemetryCollector
   ) {}
 
   public async execute(
     input: EstornarTransferenciaPixInputDTO
   ): Promise<EstornarTransferenciaPixOutputDTO> {
+    const startMs = Date.now();
     const transacaoOriginal = await this.transacaoRepo.buscarPorId(input.transacaoId);
     if (!transacaoOriginal) {
       throw new TransacaoNaoEncontradaError(input.transacaoId);
@@ -123,6 +126,8 @@ export class EstornarTransferenciaPixUseCase {
 
           const saldoOrigem = this.ledgerBalanceService.calcularSaldo(contaOrigem, lancamentosOrigemDepois);
           const saldoDestino = this.ledgerBalanceService.calcularSaldo(contaDestino, lancamentosDestinoDepois);
+
+          this.telemetry?.registrarTransacaoEstornada(debitoOriginal.valor.centavos, Date.now() - startMs);
 
           return {
             transacaoOriginalId: transacaoOriginal.id,

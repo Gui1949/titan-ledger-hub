@@ -19,6 +19,7 @@ import { MotorContabilDoubleEntry } from '../../../domain/services/MotorContabil
 import { LedgerBalanceService } from '../../../domain/services/LedgerBalanceService.js';
 import { PixTransferenciaLiquidadaEvent } from '../../../domain/events/PixTransferenciaLiquidadaEvent.js';
 import { OutboxMessage } from '../../../domain/entities/OutboxMessage.js';
+import { ITelemetryCollector } from '../../ports/telemetry/ITelemetryCollector.js';
 
 export class ProcessarTransferenciaPixUseCase {
   private readonly motorContabil = new MotorContabilDoubleEntry();
@@ -29,15 +30,19 @@ export class ProcessarTransferenciaPixUseCase {
     private readonly lockManager: ILockManager,
     private readonly contaRepo: IContaContabilRepository,
     private readonly transacaoRepo: ITransacaoRepository,
-    private readonly lancamentoRepo: ILancamentoContabilRepository
+    private readonly lancamentoRepo: ILancamentoContabilRepository,
+    private readonly telemetry?: ITelemetryCollector
   ) {}
 
   public async execute(
     input: ProcessarTransferenciaPixInputDTO
   ): Promise<ProcessarTransferenciaPixOutputDTO> {
+    const startMs = Date.now();
+
     // 1. Verificação de Idempotência
     const transacaoExistente = await this.transacaoRepo.buscarPorIdempotencyKey(input.idempotencyKey);
     if (transacaoExistente) {
+      this.telemetry?.registrarReplayIdempotente();
       const lancamentos = await this.lancamentoRepo.buscarPorTransacaoId(transacaoExistente.id);
       const debito = lancamentos.find((l) => l.tipo === 'DEBITO')!;
       const credito = lancamentos.find((l) => l.tipo === 'CREDITO')!;
@@ -175,6 +180,8 @@ export class ProcessarTransferenciaPixUseCase {
 
           const saldoRemanescenteOrigem = this.ledgerBalanceService.calcularSaldo(cOrigem, lancamentosOrigemDepois);
           const saldoAtualDestino = this.ledgerBalanceService.calcularSaldo(cDestino, lancamentosDestinoDepois);
+
+          this.telemetry?.registrarTransacaoLiquidada(valorMonetario.centavos, Date.now() - startMs);
 
           return {
             transacaoId: transacao.id,
