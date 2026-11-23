@@ -90,6 +90,11 @@ sequenceDiagram
 | **RN-10** | **Criptografia HMAC-SHA256 & DLQ Resilience** | Webhooks assinados com HMAC-SHA256 e validação por tempo constante (`timingSafeEqual`). Falhas consecutivas ativam backoff exponencial e DLQ. |
 | **RN-11** | **Auditoria Global de Partidas Dobradas (Soma Zero)** | Varredura contábil periódica do Livro-Razão. A soma global de débitos deve ser idêntica à de créditos com resíduo zero absoluto (0c). |
 | **RN-12** | **Monitoramento Industrial de Mensageria & DLQ** | Detecção de gargalos de mensagens pendentes e sinalização imediata de `DEGRADED` na presença de qualquer mensagem na Dead Letter Queue. |
+| **RN-13** | **Throughput Benchmark & Zero Float Drift** | Processamento sustentado com vazão de alta performance ($\ge 5.000\text{ ops/s}$) e validação matemática de resíduo zero. |
+| **RN-14** | **Chaos Engineering & Rollback Total de I/O** | Injeção forçada de falha de conexão/storage em meio de voo com garantia de rollback atômico sem corrupção no livro-razão. |
+| **RN-15** | **Tempestade Concorrente & Zero Deadlocks** | Múltiplas requisições cruzadas simultâneas serializadas pelo `AsyncMutexLockManager` mantendo saldos líquidos estritamente íntegros. |
+| **RN-16** | **Blindagem contra Replay Attacks & Adulteração** | Rejeição imediata de payloads com assinaturas forjadas e neutralização de replays massivos através de cache de idempotência. |
+| **RN-17** | **Release Gate de Estabilização v1.4.0** | Auditoria final do sistema com todas as 11 suítes de testes 100% aprovadas e probes de saúde operacionais. |
 
 ---
 
@@ -119,7 +124,15 @@ sequenceDiagram
 
 ---
 
-## 8. Como Executar os Testes Automatizados
+## 8. Hardening, Benchmarking & Chaos Engineering (Fase 5)
+
+- **Throughput Benchmark**: Validação de taxa sustentada de liquidação contábil com partidas dobradas em centavos inteiros.
+- **Chaos Injection**: Resiliência atestada sob queda forçada de storage com reversão completa do estado.
+- **Deadlock Storm**: Tempestade de transferências cruzadas simultâneas ($A \to B$ e $B \to A$) resolvida sem deadlocks e sem perda de centavos.
+
+---
+
+## 9. Como Executar os Testes Automatizados
 
 O projeto utiliza o executor nativo do Node.js (`node:test` e `node:assert/strict`), sem dependências externas de teste:
 
@@ -130,11 +143,18 @@ npm install
 # Compilar TypeScript
 npm run build
 
-# Executar bateria de testes automatizados completa (39 testes nativos)
+# Executar bateria de testes automatizados completa (45 testes nativos)
 npm test
 ```
 
-### Resultados da Suíte de Testes (39/39 Pass - 100%):
+### Resultados da Suíte de Testes (45/45 Pass - 100%):
+- `🏛️ Suíte de Hardening, Chaos & Benchmark (Fase 5)`: **6 testes aprovados**
+  - AC-F5-01: Throughput Benchmark Massivo (>= 5.000 ops/s e resíduo 0c)
+  - AC-F5-02: Chaos Engineering com injeção de falha de I/O e rollback atômico total
+  - AC-F5-03: Tempestade concorrente cruzada sem deadlocks e saldos preservados
+  - AC-F5-04: Blindagem contra adulteração criptográfica massiva e replays
+  - AC-F5-05: Resiliência sob caos de mensageria com roteamento para DLQ
+  - AC-F5-06: Release Gate & Auditoria Final v1.4.0 com SLA Compliance
 - `🏛️ Suíte de Telemetria, Probes & Cockpit (Fase 4)`: **7 testes aprovados**
   - Coleta de telemetria e histogramas p50/p95/p99 de latência
   - Liveness e readiness probes operacionais
@@ -156,16 +176,6 @@ npm test
   - Idempotência estrita e replay idempotente
   - Rollback atômico contra saldo insuficiente
   - Concorrência severa (prevenção de double-spending)
-  - Prevenção de deadlocks em transferências cruzadas simultâneas
-  - Rejeição de chave Pix inexistente
-  - Estorno contábil atômico e restauração de saldos
-- `🏛️ Suíte de Domínio (Fase 1)`: **18 testes aprovados**
-  - `AC-F1-01: Validação Estrita dos 4 Tipos de ChavePix (RN-03)`: 5 testes aprovados
-  - `AC-F1-02: Motor de Partidas Dobradas com Soma Zero (RN-01)`: 3 testes aprovados
-  - `AC-F1-03: Imutabilidade Contábil e Cálculo de Saldo (RN-02)`: 2 testes aprovados
-  - `AC-F1-04: Proteção contra Saldo Negativo e FSM da Conta (RN-04)`: 4 testes aprovados
-  - `AC-F1-05: Ciclo Completo de Transferência Pix com Liquidação e Estorno (RN-05)`: 2 testes aprovados
-  - `Value Objects Auxiliares: ValorMonetario e AgenciaConta`: 2 testes aprovados
   - Prevenção de deadlocks em transferências cruzadas simultâneas
   - Rejeição de chave Pix inexistente
   - Estorno contábil atômico e restauração de saldos

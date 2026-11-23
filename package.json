@@ -1,12 +1,12 @@
 {
   "name": "@titan/titan-ledger-hub",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "TitanLedger & Clearing Hub — Core Banking, Double-Entry Bookkeeping & Liquidação Instantânea Pix",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "test": "node --test dist/tests/titan-domain.test.js dist/tests/application/processar-transferencia-pix.test.js dist/tests/application/events-outbox-resilience.test.js dist/tests/application/telemetry-cockpit.test.js",
+    "test": "node --test dist/tests/titan-domain.test.js dist/tests/application/processar-transferencia-pix.test.js dist/tests/application/events-outbox-resilience.test.js dist/tests/application/telemetry-cockpit.test.js dist/tests/application/hardening-chaos-bench.test.js",
     "test:all": "npm run build && npm test",
     "start": "node dist/index.js"
   },
@@ -27,7 +27,10 @@
     "outbox-pattern",
     "telemetry",
     "health-probes",
-    "cockpit"
+    "cockpit",
+    "hardening",
+    "chaos-engineering",
+    "benchmark"
   ],
   "author": "Guilherme Santiago Floriano",
   "license": "MIT",
